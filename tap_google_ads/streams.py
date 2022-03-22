@@ -1,4 +1,5 @@
 from collections import defaultdict
+import os
 import json
 import hashlib
 from datetime import timedelta
@@ -21,6 +22,10 @@ REPORTS_WITH_90_DAY_MAX = frozenset(
 )
 
 DEFAULT_CONVERSION_WINDOW = 30
+
+CUSTOM_REPORT_NAME = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_NAME")
+CUSTOM_REPORT_FIELDS = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_FIELDS")
+CUSTOM_REPORT_RESOURCES = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_RESOURCES")
 
 
 def create_nested_resource_schema(resource_schema, fields):
@@ -419,13 +424,13 @@ class ReportStream(BaseStream):
         transformed_obj = {}
 
         for resource_name, value in obj.items():
-            if resource_name == "ad_group_ad":
-                transformed_obj.update(value["ad"])
-            else:
+            if resource_name == "metrics" or resource_name == "segments":
                 transformed_obj.update(value)
+            else:
+                for k, v in value.items():
+                    transformed_obj.update({f"{resource_name}_{k}": v})
 
-        if "type_" in transformed_obj:
-            transformed_obj["type"] = transformed_obj.pop("type_")
+        replace_specified_keys(transformed_obj)
 
         return transformed_obj
 
@@ -488,6 +493,10 @@ class ReportStream(BaseStream):
                     transformed_obj = self.transform_keys(json_message)
                     record = transformer.transform(transformed_obj, stream["schema"])
                     record["_sdc_record_hash"] = generate_hash(record, stream_mdata)
+
+                    unnested_schema = get_unnested_schema(stream["schema"])
+                    unnested_result = flatten_nested_search_result(record)
+                    record = fill_columns(unnested_result, unnested_schema)
 
                     singer.write_record(stream_name, record)
 
@@ -686,4 +695,66 @@ def initialize_reports(resource_schema):
             resource_schema,
             ["_sdc_record_hash"],
         ),
+        CUSTOM_REPORT_NAME: ReportStream(
+            CUSTOM_REPORT_FIELDS.split(","),
+            CUSTOM_REPORT_RESOURCES.split(","),
+            resource_schema,
+            ["_sdc_record_hash"],
+        )
     }
+
+def replace_specified_keys(input_json):
+    if isinstance(input_json, dict):
+        for key in list(input_json):
+            key_value = input_json.get(key)
+            if isinstance(key_value, dict):
+                replace_specified_keys(key_value)
+            elif isinstance(key_value, list):
+                for json_array in key_value:
+                    replace_specified_keys(json_array)
+            else:
+                if key == "type_":
+                    input_json["type"] = input_json.pop("type_")
+    elif isinstance(input_json,list):
+        for input_json_array in input_json:
+            replace_specified_keys(input_json_array)
+
+def flatten_nested_search_result(y):
+    out = {}
+
+    def flatten(x, name=''):
+        if isinstance(x, dict):
+            for a in x:
+                flatten(x[a], name + a + '_')
+        elif isinstance(x, list):
+            i = 0
+            for a in x:
+                flatten(a, name + str(i) + '_')
+                i += 1
+        else:
+            out[name[:-1]] = x
+
+    flatten(y)
+    return out
+
+def get_unnested_schema(y):
+    out = []
+
+    def flatten(x, name=''):
+        if isinstance(x, dict) and x.get('properties'):
+            for k, v in x['properties'].items():
+                flatten(v, name + k + '_')
+        else:
+            out.append(name[:-1])
+
+    flatten(y)
+    return out
+
+def fill_columns(json, schema):
+    out = {}
+    for s in schema:
+        if s in list(json):
+            out.update({s: json[s]})
+        else:
+            out.update({s: None})
+    return out
