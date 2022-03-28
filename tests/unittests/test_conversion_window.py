@@ -1,9 +1,11 @@
+import re
 import unittest
 from datetime import datetime
 from datetime import timedelta
 from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
+from tap_google_ads.streams import get_conversion_window
 from tap_google_ads.streams import ReportStream
 from tap_google_ads.streams import make_request
 
@@ -77,7 +79,7 @@ class TestBookmarkWithinConversionWindow(unittest.TestCase):
 
         # Verify the first date queried is the conversion window date (not the bookmark)
         expected_first_query_date = str(end_date - timedelta(days=conversion_window))[:10]
-        actual_first_query_date = str(all_queries_requested[0])[-11:-1]
+        actual_first_query_date = re.search(r'\d\d\d\d-\d\d-\d\d', all_queries_requested[0]).group()
         self.assertEqual(expected_first_query_date, actual_first_query_date)
 
         # Verify the number of days queried is based off the conversion window.
@@ -151,7 +153,7 @@ class TestBookmarkOnConversionWindow(unittest.TestCase):
 
         # Verify the first date queried is the conversion window date / bookmark
         expected_first_query_date = str(bookmark_value)[:10]
-        actual_first_query_date = str(all_queries_requested[0])[-11:-1]
+        actual_first_query_date = re.search(r'\d\d\d\d-\d\d-\d\d', all_queries_requested[0]).group()
         self.assertEqual(expected_first_query_date, actual_first_query_date)
 
         # Verify the number of days queried is based off the conversion window.
@@ -221,11 +223,54 @@ class TestStartDateWithinConversionWindow(unittest.TestCase):
 
         # Verify the first date queried is the conversion window date (not the bookmark)
         expected_first_query_date = str(start_date)[:10]
-        actual_first_query_date = str(all_queries_requested[0])[-11:-1]
+        actual_first_query_date = re.search(r'\d\d\d\d-\d\d-\d\d', all_queries_requested[0]).group()
         self.assertEqual(expected_first_query_date, actual_first_query_date)
 
         # Verify the number of days queried is based off the start_date
         self.assertEqual(len(all_queries_requested), 1)
+
+
+class TestGetConversionWindow(unittest.TestCase):
+    def test_int_conversion_date_in_allowable_range(self):
+        actual = get_conversion_window({"conversion_window": 12})
+        expected = 12
+        self.assertEqual(expected, actual)
+
+    def test_str_conversion_date_in_allowable_range(self):
+        actual = get_conversion_window({"conversion_window": "12"})
+        expected = 12
+        self.assertEqual(expected, actual)
+
+    def test_conversion_date_outside_allowable_range(self):
+        with self.assertRaises(RuntimeError):
+            get_conversion_window({"conversion_window": 42})
+
+        with self.assertRaises(RuntimeError):
+            get_conversion_window({"conversion_window": "42"})
+
+    def test_non_int_or_str_conversion_date(self):
+        with self.assertRaises(RuntimeError):
+            get_conversion_window({"conversion_window": {"12": 12}})
+
+        with self.assertRaises(RuntimeError):
+            get_conversion_window({"conversion_window": [12]})
+
+    def test_empty_data_types_conversion_date_returns_default(self):
+        expected = 30
+
+        actual = get_conversion_window({"conversion_window": ""})
+        self.assertEqual(expected, actual)
+
+        actual = get_conversion_window({"conversion_window": {}})
+        self.assertEqual(expected, actual)
+
+        actual = get_conversion_window({"conversion_window": []})
+        self.assertEqual(expected, actual)
+
+    def test_None_conversion_date_returns_default(self):
+        actual = get_conversion_window({"conversion_window": None})
+        expected = 30
+        self.assertEqual(expected, actual)
 
 
 if __name__ == '__main__':
