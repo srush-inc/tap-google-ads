@@ -13,7 +13,11 @@ from . import report_definitions
 
 LOGGER = singer.get_logger()
 
-API_VERSION = "v9"
+API_VERSION = "v10"
+
+API_PARAMETERS = {
+    "omit_unselected_resource_names": "true"
+}
 
 REPORTS_WITH_90_DAY_MAX = frozenset(
     [
@@ -27,6 +31,20 @@ CUSTOM_REPORT_NAME = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_NAME")
 CUSTOM_REPORT_FIELDS = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_FIELDS")
 CUSTOM_REPORT_RESOURCES = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_RESOURCES")
 
+
+def get_conversion_window(config):
+    """Fetch the conversion window from the config and error on invalid values"""
+    conversion_window = config.get("conversion_window") or DEFAULT_CONVERSION_WINDOW
+
+    try:
+        conversion_window = int(conversion_window)
+    except (ValueError, TypeError) as err:
+        raise RuntimeError("Conversion Window must be an int or string") from err
+
+    if conversion_window in set(range(1,31)) or conversion_window in {60, 90}:
+        return conversion_window
+
+    raise RuntimeError("Conversion Window must be between 1 - 30 inclusive, 60, or 90")
 
 def create_nested_resource_schema(resource_schema, fields):
     new_schema = {
@@ -63,8 +81,13 @@ def get_selected_fields(stream_mdata):
     return selected_fields
 
 
+def build_parameters():
+    param_str = ",".join(f"{k}={v}" for k, v in API_PARAMETERS.items())
+    return f"PARAMETERS {param_str}"
+
+
 def create_core_stream_query(resource_name, selected_fields):
-    core_query = f"SELECT {','.join(selected_fields)} FROM {resource_name}"
+    core_query = f"SELECT {','.join(selected_fields)} FROM {resource_name} {build_parameters()}"
     return core_query
 
 
@@ -72,19 +95,19 @@ def create_report_query(resource_name, selected_fields, query_date):
 
     format_str = "%Y-%m-%d"
     query_date = utils.strftime(query_date, format_str=format_str)
-    report_query = f"SELECT {','.join(selected_fields)} FROM {resource_name} WHERE segments.date = '{query_date}'"
+    report_query = f"SELECT {','.join(selected_fields)} FROM {resource_name} WHERE segments.date = '{query_date}' {build_parameters()}"
 
     return report_query
 
 
 def generate_hash(record, metadata):
     metadata = singer.metadata.to_map(metadata)
-    fields_to_hash = {}
+    fields_to_hash = []
     for key, val in record.items():
         if metadata[("properties", key)]["behavior"] != "METRIC":
-            fields_to_hash[key] = val
+            fields_to_hash.append((key, val))
 
-    hash_source_data = {key: fields_to_hash[key] for key in sorted(fields_to_hash)}
+    hash_source_data = sorted(fields_to_hash, key=lambda x: x[0])
     hash_bytes = json.dumps(hash_source_data).encode("utf-8")
     return hashlib.sha256(hash_bytes).hexdigest()
 
@@ -134,6 +157,18 @@ def make_request(gas, query, customer_id):
     return response
 
 
+def google_message_to_json(message):
+    """
+    The proto field name for `type` is `type_` which will
+    get stripped by the Transformer. So we replace all
+    instances of the key `"type_"` before `json.loads`ing it
+    """
+
+    json_string = MessageToJson(message, preserving_proto_field_name=True)
+    json_string = json_string.replace('"type_":', '"type":')
+    return json.loads(json_string)
+
+
 class BaseStream:  # pylint: disable=too-many-instance-attributes
 
     def __init__(self, fields, google_ads_resource_names, resource_schema, primary_keys):
@@ -154,7 +189,6 @@ class BaseStream:  # pylint: disable=too-many-instance-attributes
         self.field_exclusions = defaultdict(set)
         self.schema = {}
         self.behavior = {}
-        self.selectable = {}
 
         for resource_name in self.google_ads_resource_names:
 
@@ -170,7 +204,6 @@ class BaseStream:  # pylint: disable=too-many-instance-attributes
 
                     self.behavior[field_name] = field["field_details"]["category"]
 
-                    self.selectable[field_name] = field["field_details"]["selectable"]
             self.add_extra_fields(resource_schema)
         self.field_exclusions = {k: list(v) for k, v in self.field_exclusions.items()}
 
@@ -309,7 +342,7 @@ class BaseStream:  # pylint: disable=too-many-instance-attributes
         with Transformer() as transformer:
             # Pages are fetched automatically while iterating through the response
             for message in response:
-                json_message = json.loads(MessageToJson(message, preserving_proto_field_name=True))
+                json_message = google_message_to_json(message)
                 transformed_obj = self.transform_keys(json_message)
                 record = transformer.transform(transformed_obj, stream["schema"], singer.metadata.to_map(stream_mdata))
 
@@ -351,13 +384,12 @@ class ReportStream(BaseStream):
         """
         for resource_name, schema in self.full_schema["properties"].items():
             for field_name, data_type in schema["properties"].items():
-                # Ensure that attributed resource fields have the resource name as a prefix, eg campaign_id under the ad_groups stream
-                if resource_name not in {"metrics", "segments"} and resource_name not in self.google_ads_resource_names:
-                    self.stream_schema["properties"][f"{resource_name}_{field_name}"] = data_type
                 # Move ad_group_ad.ad.x fields up a level in the schema (ad_group_ad.ad.x -> ad_group_ad.x)
-                elif resource_name == "ad_group_ad" and field_name == "ad":
+                if resource_name == "ad_group_ad" and field_name == "ad":
                     for ad_field_name, ad_field_schema in data_type["properties"].items():
                         self.stream_schema["properties"][ad_field_name] = ad_field_schema
+                elif resource_name not in {"metrics", "segments"}:
+                    self.stream_schema["properties"][f"{resource_name}_{field_name}"] = data_type
                 else:
                     self.stream_schema["properties"][field_name] = data_type
 
@@ -370,22 +402,22 @@ class ReportStream(BaseStream):
                 "valid-replication-keys": ["date"]
             },
             ("properties", "_sdc_record_hash"): {
-                "inclusion": "automatic"
+                "inclusion": "automatic",
+                "behavior": "PRIMARY KEY"
             },
         }
         for report_field in self.fields:
             # Transform the field name to match the schema
             is_metric_or_segment = report_field.startswith("metrics.") or report_field.startswith("segments.")
-            if (not is_metric_or_segment
-                and report_field.split(".")[0] not in self.google_ads_resource_names
-            ):
-                transformed_field_name = "_".join(report_field.split(".")[:2])
             # Transform ad_group_ad.ad.x fields to just x to reflect ad_group_ads schema
-            elif report_field.startswith("ad_group_ad.ad."):
+            if report_field.startswith("ad_group_ad.ad."):
                 transformed_field_name = report_field.split(".")[2]
+            elif not is_metric_or_segment:
+                transformed_field_name = "_".join(report_field.split(".")[:2])
             else:
                 transformed_field_name = report_field.split(".")[1]
-
+            # TODO: Maybe refactor this
+            # metadata_key = ("properties", transformed_field_name)
             # Base metadata for every field
             if ("properties", transformed_field_name) not in self.stream_metadata:
                 self.stream_metadata[("properties", transformed_field_name)] = {
@@ -396,9 +428,7 @@ class ReportStream(BaseStream):
                 # Transform field exclusion names so they match the schema
                 for field_name in self.field_exclusions[report_field]:
                     is_metric_or_segment = field_name.startswith("metrics.") or field_name.startswith("segments.")
-                    if (not is_metric_or_segment
-                        and field_name.split(".")[0] not in self.google_ads_resource_names
-                    ):
+                    if not is_metric_or_segment:
                         new_field_name = field_name.replace(".", "_")
                     else:
                         new_field_name = field_name.split(".")[1]
@@ -424,13 +454,22 @@ class ReportStream(BaseStream):
         transformed_obj = {}
 
         for resource_name, value in obj.items():
-            if resource_name == "metrics" or resource_name == "segments":
+            if resource_name in {"metrics", "segments"}:
                 transformed_obj.update(value)
+            # elif resource_name == "ad_group_ad":
+            #     for key, sub_value in value.items():
+            #         if key == 'ad':
+            #             transformed_obj.update(sub_value)
+            #         else:
+            #             transformed_obj.update({f"{resource_name}_{key}": sub_value})
             else:
-                for k, v in value.items():
-                    transformed_obj.update({f"{resource_name}_{k}": v})
-
-        replace_specified_keys(transformed_obj)
+                # value = {"a": 1, "b":2}
+                # turns into
+                # {"resource_a": 1, "resource_b": 2}
+                transformed_obj.update(
+                    {f"{resource_name}_{key}": sub_value
+                     for key, sub_value in value.items()}
+                )
 
         return transformed_obj
 
@@ -445,7 +484,7 @@ class ReportStream(BaseStream):
         singer.write_state(state)
 
         conversion_window = timedelta(
-            days=int(config.get("conversion_window") or DEFAULT_CONVERSION_WINDOW)
+            days=get_conversion_window(config)
         )
         conversion_window_date = utils.now().replace(hour=0, minute=0, second=0, microsecond=0) - conversion_window
 
@@ -489,7 +528,7 @@ class ReportStream(BaseStream):
             with Transformer() as transformer:
                 # Pages are fetched automatically while iterating through the response
                 for message in response:
-                    json_message = json.loads(MessageToJson(message, preserving_proto_field_name=True))
+                    json_message = google_message_to_json(message)
                     transformed_obj = self.transform_keys(json_message)
                     record = transformer.transform(transformed_obj, stream["schema"])
                     record["_sdc_record_hash"] = generate_hash(record, stream_mdata)

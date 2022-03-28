@@ -617,13 +617,7 @@ class GoogleAdsBase(unittest.TestCase):
                 'view_through_conversions',  # View-through conv.,
             },
             "ad_group_audience_performance_report": {
-                'average_cpc',  # Avg. CPC,
-                'average_cpm',  # Avg. CPM
-                'clicks',  # Clicks,
-                'ctr',  # CTR,
-                'customer_id',  # Customer ID,
-                'impressions',  # Impr.,
-                'ad_group_targeting_setting',  # Targeting Setting,
+                'ad_group_name',
             },
             "campaign_performance_report": {
                 'average_cpc',  # Avg. CPC,
@@ -636,36 +630,37 @@ class GoogleAdsBase(unittest.TestCase):
                 'view_through_conversions',  # View-through conv.,
             },
             "click_performance_report": {
-                'ad_group_ad',
+                'click_view_ad_group_ad',
                 'ad_group_id',
                 'ad_group_name',
                 'ad_group_status',
                 'ad_network_type',
-                'area_of_interest',
-                'campaign_location_target',
+                'click_view_area_of_interest',
+                'click_view_campaign_location_target',
                 'click_type',
                 'clicks',
                 'customer_descriptive_name',
                 'customer_id',
                 'device',
-                'gclid',
-                'location_of_presence',
+                'click_view_gclid',
+                'click_view_location_of_presence',
                 'month_of_year',
-                'page_number',
+                'click_view_page_number',
                 'slot',
-                'user_list',
+                'click_view_user_list',
             },
             "display_keyword_performance_report": { # TODO NO DATA AVAILABLE
-                'average_cpc',  # Avg. CPC,
-                'average_cpm',  # Avg. CPM,
-                'average_cpv',  # Avg. CPV,
+                'ad_group_name',
+                # 'average_cpc',  # Avg. CPC,
+                # 'average_cpm',  # Avg. CPM,
+                # 'average_cpv',  # Avg. CPV,
                 'clicks',  # Clicks,
-                'conversions',  # Conversions,
-                'cost_per_conversion',  # Cost / conv.,
+                # 'conversions',  # Conversions,
+                # 'cost_per_conversion',  # Cost / conv.,
                 'impressions',  # Impr.,
-                'interaction_rate',  # Interaction rate,
-                'interactions',  # Interactions,
-                'view_through_conversions',  # View-through conv.,
+                # 'interaction_rate',  # Interaction rate,
+                # 'interactions',  # Interactions,
+                # 'view_through_conversions',  # View-through conv.,
             },
             "display_topics_performance_report": { # TODO NO DATA AVAILABLE
                 'ad_group_name', # 'ad_group',  # Ad group,
@@ -679,15 +674,26 @@ class GoogleAdsBase(unittest.TestCase):
             },
             "placement_performance_report": { # TODO NO DATA AVAILABLE
                 'clicks',
-                'impressions',  # Impr.,
+                'impressions',
+                'ad_group_id',
                 'ad_group_criterion_placement',  # 'placement_group', 'placement_type',
             },
-            # "keywords_performance_report": set(),
+            "keywords_performance_report": { # TODO NO DATA AVAILABLE
+                'campaign_id',
+                'clicks',
+                'impressions',
+                'ad_group_criterion_keyword',
+            },
+            "keywordless_query_report": {
+                'campaign_id',
+                'clicks',
+                'impressions',
+            },
             # "shopping_performance_report": set(),
             "video_performance_report": {
                 'campaign_name',
                 'clicks',
-                'video_quartile_p25_rate',
+                # 'video_views',
             },
             # NOTE AFTER THIS POINT COULDN"T FIND IN UI
             "account_performance_report": {
@@ -695,13 +701,13 @@ class GoogleAdsBase(unittest.TestCase):
                 'click_type',
                 'clicks',
                 'date',
-                'descriptive_name',
-                'id',
+                'customer_descriptive_name',
+                'customer_id',
                 'impressions',
                 'invalid_clicks',
-                'manager',
-                'test_account',
-                'time_zone',
+                'customer_manager',
+                'customer_test_account',
+                'customer_time_zone',
             },
             "geo_performance_report": {
                 'clicks',
@@ -732,7 +738,7 @@ class GoogleAdsBase(unittest.TestCase):
                 'conversions',
                 'view_through_conversions',  # View-through conv.,
                 'cost_per_conversion',  # Cost / conv.,
-                'search_term',
+                'search_term_view_search_term',
                 'search_term_match_type',
             },
             "age_range_performance_report": {
@@ -754,8 +760,42 @@ class GoogleAdsBase(unittest.TestCase):
                 'clicks',
                 'cost_micros',
                 'interactions',
-                'placeholder_type',
+                'feed_placeholder_view_placeholder_type',
             },
-            # 'landing_page_report': set(), # TODO
-            # 'expanded_landing_page_report': set(), # TODO
+            'user_location_performance_report': {
+                'campaign_id',
+                'clicks',
+                'geo_target_region',
+            },
+            'landing_page_report': {
+                'ad_group_name',
+                'campaign_name',
+                'clicks',
+                'average_cpc',
+                'landing_page_view_unexpanded_final_url',
+            },
+            'expanded_landing_page_report': {
+                'ad_group_name',
+                'campaign_name',
+                'clicks',
+                'average_cpc',
+                'expanded_landing_page_view_expanded_final_url',
+            },
+            'campaign_audience_performance_report': {
+                'campaign_name',
+                'click_type',
+                'clicks',
+                'interactions',
+            },
         }
+    def assertIsDateFormat(self, value, str_format):
+        """
+        Assertion Method that verifies a string value is a formatted datetime with
+        the specified format.
+        """
+        try:
+            _ = dt.strptime(value, str_format)
+        except ValueError as err:
+            raise AssertionError(
+                f"Value does not conform to expected format: {str_format}"
+            ) from err
