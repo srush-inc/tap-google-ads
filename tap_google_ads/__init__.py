@@ -28,7 +28,7 @@ def main_impl():
     if args.state:
         state.update(args.state)
     if args.discover:
-        do_discover(resource_schema)
+        do_discover(args.config, resource_schema)
         LOGGER.info("Discovery complete")
     elif args.catalog:
         do_sync(args.config, args.catalog.to_dict(), resource_schema, state)

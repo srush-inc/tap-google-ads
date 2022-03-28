@@ -1,5 +1,5 @@
 from collections import defaultdict
-import os
+from pathlib import Path
 import json
 import hashlib
 from datetime import timedelta
@@ -26,11 +26,6 @@ REPORTS_WITH_90_DAY_MAX = frozenset(
 )
 
 DEFAULT_CONVERSION_WINDOW = 30
-
-CUSTOM_REPORT_NAME = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_NAME")
-CUSTOM_REPORT_FIELDS = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_FIELDS")
-CUSTOM_REPORT_RESOURCES = os.getenv("TAP_GOOGLE_ADS_CUSTOM_REPORT_RESOURCES")
-
 
 def get_conversion_window(config):
     """Fetch the conversion window from the config and error on invalid values"""
@@ -456,12 +451,12 @@ class ReportStream(BaseStream):
         for resource_name, value in obj.items():
             if resource_name in {"metrics", "segments"}:
                 transformed_obj.update(value)
-            # elif resource_name == "ad_group_ad":
-            #     for key, sub_value in value.items():
-            #         if key == 'ad':
-            #             transformed_obj.update(sub_value)
-            #         else:
-            #             transformed_obj.update({f"{resource_name}_{key}": sub_value})
+            elif resource_name == "ad_group_ad":
+                for key, sub_value in value.items():
+                    if key == 'ad':
+                        transformed_obj.update(sub_value)
+                    else:
+                        transformed_obj.update({f"{resource_name}_{key}": sub_value})
             else:
                 # value = {"a": 1, "b":2}
                 # turns into
@@ -533,9 +528,7 @@ class ReportStream(BaseStream):
                     record = transformer.transform(transformed_obj, stream["schema"])
                     record["_sdc_record_hash"] = generate_hash(record, stream_mdata)
 
-                    unnested_schema = get_unnested_schema(stream["schema"])
-                    unnested_result = flatten_nested_search_result(record)
-                    record = fill_columns(unnested_result, unnested_schema)
+                    record = fill_columns(record, stream["schema"])
 
                     singer.write_record(stream_name, record)
 
@@ -733,67 +726,73 @@ def initialize_reports(resource_schema):
             ["video"],
             resource_schema,
             ["_sdc_record_hash"],
-        ),
-        CUSTOM_REPORT_NAME: ReportStream(
-            CUSTOM_REPORT_FIELDS.split(","),
-            CUSTOM_REPORT_RESOURCES.split(","),
-            resource_schema,
-            ["_sdc_record_hash"],
         )
     }
 
-def replace_specified_keys(input_json):
-    if isinstance(input_json, dict):
-        for key in list(input_json):
-            key_value = input_json.get(key)
-            if isinstance(key_value, dict):
-                replace_specified_keys(key_value)
-            elif isinstance(key_value, list):
-                for json_array in key_value:
-                    replace_specified_keys(json_array)
+def initialize_custom_reports(resource_schema, config):
+    reports = read_custom_reports(config)
+    out = {}
+    for r in reports:
+        out.update({
+            r.get("name"): ReportStream(
+                r.get("fields"),
+                r.get("resources"),
+                resource_schema,
+                ["_sdc_record_hash"],
+            )
+        }) 
+    return out
+
+def read_custom_reports(config):
+    custom_reports = config.get("custom_reports")
+    
+    if custom_reports and Path(custom_reports).is_file():
+        try:
+            with open(custom_reports) as f:
+                return json.load(f)
+        except ValueError as err:
+            raise RuntimeError(f"The JSON definition in '{custom_reports}' has errors") from err
+    else:
+        raise Exception(f"'{custom_reports}' file not found")
+
+def fill_columns(result, schema):
+    def flatten_nested_search_result(y):
+        out = {}
+
+        def flatten(x, name=''):
+            if isinstance(x, dict):
+                for a in x:
+                    flatten(x[a], name + a + '_')
+            elif isinstance(x, list):
+                i = 0
+                for a in x:
+                    flatten(a, name + str(i) + '_')
+                    i += 1
             else:
-                if key == "type_":
-                    input_json["type"] = input_json.pop("type_")
-    elif isinstance(input_json,list):
-        for input_json_array in input_json:
-            replace_specified_keys(input_json_array)
+                out[name[:-1]] = x
 
-def flatten_nested_search_result(y):
+        flatten(y)
+        return out
+
+    def flatten_nested_schema(y):
+        out = []
+
+        def flatten(x, name=''):
+            if isinstance(x, dict) and x.get('properties'):
+                for k, v in x['properties'].items():
+                    flatten(v, name + k + '_')
+            else:
+                out.append(name[:-1])
+
+        flatten(y)
+        return out
+
     out = {}
-
-    def flatten(x, name=''):
-        if isinstance(x, dict):
-            for a in x:
-                flatten(x[a], name + a + '_')
-        elif isinstance(x, list):
-            i = 0
-            for a in x:
-                flatten(a, name + str(i) + '_')
-                i += 1
-        else:
-            out[name[:-1]] = x
-
-    flatten(y)
-    return out
-
-def get_unnested_schema(y):
-    out = []
-
-    def flatten(x, name=''):
-        if isinstance(x, dict) and x.get('properties'):
-            for k, v in x['properties'].items():
-                flatten(v, name + k + '_')
-        else:
-            out.append(name[:-1])
-
-    flatten(y)
-    return out
-
-def fill_columns(json, schema):
-    out = {}
-    for s in schema:
-        if s in list(json):
-            out.update({s: json[s]})
+    flat_schema = flatten_nested_schema(schema)
+    flat_result = flatten_nested_search_result(result)
+    for s in flat_schema:
+        if s in list(flat_result):
+            out.update({s: flat_result[s]})
         else:
             out.update({s: None})
     return out

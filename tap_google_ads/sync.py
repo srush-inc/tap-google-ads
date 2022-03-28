@@ -3,7 +3,7 @@ import json
 import singer
 
 from tap_google_ads.client import create_sdk_client
-from tap_google_ads.streams import initialize_core_streams, initialize_reports
+from tap_google_ads.streams import initialize_core_streams, initialize_reports, initialize_custom_reports
 
 LOGGER = singer.get_logger()
 
@@ -73,6 +73,8 @@ def do_sync(config, catalog, resource_schema, state):
 
     core_streams = initialize_core_streams(resource_schema)
     report_streams = initialize_reports(resource_schema)
+    custom_report_streams = initialize_custom_reports(resource_schema, config)
+    
     resuming_stream, resuming_customer = get_currently_syncing(state)
 
     if resuming_stream:
@@ -105,8 +107,10 @@ def do_sync(config, catalog, resource_schema, state):
 
             if core_streams.get(stream_name):
                 stream_obj = core_streams[stream_name]
-            else:
+            elif report_streams.get(stream_name):
                 stream_obj = report_streams[stream_name]
+            else:
+                stream_obj = custom_report_streams[stream_name]
 
             stream_obj.sync(sdk_client, customer, catalog_entry, config, state)
 

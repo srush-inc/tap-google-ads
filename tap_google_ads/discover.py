@@ -1,3 +1,4 @@
+import imp
 import json
 import sys
 
@@ -6,6 +7,7 @@ import singer
 from tap_google_ads.client import create_sdk_client
 from tap_google_ads.streams import initialize_core_streams
 from tap_google_ads.streams import initialize_reports
+from tap_google_ads.streams import initialize_custom_reports
 
 LOGGER = singer.get_logger()
 
@@ -242,10 +244,12 @@ def do_discover_streams(stream_name_to_resource):
     return streams
 
 
-def do_discover(resource_schema):
+def do_discover(config, resource_schema):
     core_streams = do_discover_streams(initialize_core_streams(resource_schema))
     report_streams = do_discover_streams(initialize_reports(resource_schema))
+    custom_report_streams = do_discover_streams(initialize_custom_reports(resource_schema, config))
     streams = []
     streams.extend(core_streams)
     streams.extend(report_streams)
+    streams.extend(custom_report_streams)
     json.dump({"streams": streams}, sys.stdout, indent=2)
