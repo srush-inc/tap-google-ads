@@ -16,7 +16,7 @@ LOGGER = singer.get_logger()
 API_VERSION = "v10"
 
 API_PARAMETERS = {
-    "omit_unselected_resource_names": "false"
+    "omit_unselected_resource_names": "true"
 }
 
 REPORTS_WITH_90_DAY_MAX = frozenset(
