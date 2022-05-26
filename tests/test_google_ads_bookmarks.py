@@ -35,10 +35,9 @@ class BookmarksTest(GoogleAdsBase):
         state < (today - converstion window), therefore the state should be used
         on sync 2
 
-        Outstanding Work:
-          TODO_TDL-17918 Determine if we can test the following case at the tap-tester level
-          A sync results in a state such that state > (today - converstion window), therfore the
-          tap should pick up based on (today - converstion window) on sync 2.
+        Note:
+          TDL-17918 implemented tap-tester level conversion window testing.  Unit tests cover
+          additional scenarios
 
         """
         print("Bookmarks Test for tap-google-ads")
@@ -55,6 +54,7 @@ class BookmarksTest(GoogleAdsBase):
             'shopping_performance_report',
             'video_performance_report',
             'campaign_audience_performance_report',
+            'call_details', # need test call data before data will be returned
         }
 
         # Run a discovery job

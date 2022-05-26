@@ -3,8 +3,8 @@
 
 # QA steps
  - [ ] automated tests passing
- - [ ] manual qa steps passing (list below)
- 
+ - [ ] manual qa steps passing
+
 # Risks
 
 # Rollback steps
