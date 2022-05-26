@@ -1,5 +1,5 @@
 import json
-
+import itertools
 import singer
 
 from tap_google_ads.client import create_sdk_client
@@ -98,8 +98,9 @@ def do_sync(config, catalog, resource_schema, state):
         mdata_map = singer.metadata.to_map(catalog_entry["metadata"])
 
         primary_key = mdata_map[()].get("table-key-properties", [])
-        singer.messages.write_schema(stream_name, catalog_entry["schema"], primary_key)
-
+        flatten_entry = flatten_schema(catalog_entry["schema"], max_level=10)
+        singer.messages.write_schema(stream_name, flatten_entry, primary_key)
+        
         for customer in customers:
             sdk_client = create_sdk_client(config, customer["loginCustomerId"])
 
@@ -116,3 +117,40 @@ def do_sync(config, catalog, resource_schema, state):
 
     state.pop("currently_syncing")
     singer.write_state(state)
+    
+def flatten_key(k, parent_key, sep):
+    full_key = parent_key + [k]
+    return sep.join(full_key)
+
+def flatten_schema(d, parent_key=[], sep='_', level=0, max_level=0):
+    items = []
+
+    if 'properties' not in d:
+        return {}
+
+    for k, v in d['properties'].items():
+        new_key = flatten_key(k, parent_key, sep)
+        if 'type' in v.keys():
+            if 'object' in v['type'] and 'properties' in v and level < max_level:
+                items.extend(flatten_schema(v, parent_key + [k], sep=sep, level=level+1, max_level=max_level).items())
+            else:
+                items.append((new_key, v))
+        else:
+            if len(v.values()) > 0:
+                if list(v.values())[0][0]['type'] == 'string':
+                    list(v.values())[0][0]['type'] = ['null', 'string']
+                    items.append((new_key, list(v.values())[0][0]))
+                elif list(v.values())[0][0]['type'] == 'array':
+                    list(v.values())[0][0]['type'] = ['null', 'array']
+                    items.append((new_key, list(v.values())[0][0]))
+                elif list(v.values())[0][0]['type'] == 'object':
+                    list(v.values())[0][0]['type'] = ['null', 'object']
+                    items.append((new_key, list(v.values())[0][0]))
+
+    key_func = lambda item: item[0]
+    sorted_items = sorted(items, key=key_func)
+    for k, g in itertools.groupby(sorted_items, key=key_func):
+        if len(list(g)) > 1:
+            raise ValueError('Duplicate column name produced in schema: {}'.format(k))
+
+    return dict({"properties": sorted_items})
