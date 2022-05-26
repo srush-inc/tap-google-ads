@@ -466,7 +466,7 @@ class ReportStream(BaseStream):
         self.stream_metadata = {
             (): {
                 "inclusion": "available",
-                "table-key-properties": ["_sdc_record_hash"],
+                "table-key-properties": self.primary_keys,
                 "forced-replication-method": "INCREMENTAL",
                 "valid-replication-keys": ["date"]
             },
@@ -998,6 +998,20 @@ def initialize_reports(resource_schema):
     }
 
 def initialize_custom_reports(resource_schema, config):
+    def format_primary_keys(keys):
+        if keys and len(keys) > 0:
+            formated_keys=[]
+            for k in keys:
+                if k.startswith("metrics.") or k.startswith("segments."):
+                    formated_keys.append("_".join(k.split(".")[1:]))
+                elif k.startswith("ad_group_ad.ad."):
+                    formated_keys.append("_".join(k.split(".")[2:]))
+                else:
+                    formated_keys.append("_".join(k.split(".")))
+            return formated_keys
+        else:
+            return ["_sdc_record_hash"]
+                    
     reports = read_custom_reports(config)
     out = {}
     for r in reports:
@@ -1006,7 +1020,7 @@ def initialize_custom_reports(resource_schema, config):
                 r.get("fields"),
                 r.get("resources"),
                 resource_schema,
-                ["_sdc_record_hash"],
+                format_primary_keys(r.get("primary_keys"))
             )
         }) 
     return out
