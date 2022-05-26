@@ -98,9 +98,8 @@ def do_sync(config, catalog, resource_schema, state):
         mdata_map = singer.metadata.to_map(catalog_entry["metadata"])
 
         primary_key = mdata_map[()].get("table-key-properties", [])
-        flatten_entry = flatten_schema(catalog_entry["schema"], max_level=10)
+        flatten_entry = {"properties": flatten_schema(catalog_entry["schema"], max_level=10)}
         singer.messages.write_schema(stream_name, flatten_entry, primary_key)
-        
         for customer in customers:
             sdk_client = create_sdk_client(config, customer["loginCustomerId"])
 
@@ -153,4 +152,4 @@ def flatten_schema(d, parent_key=[], sep='_', level=0, max_level=0):
         if len(list(g)) > 1:
             raise ValueError('Duplicate column name produced in schema: {}'.format(k))
 
-    return dict({"properties": sorted_items})
+    return dict(sorted_items)
