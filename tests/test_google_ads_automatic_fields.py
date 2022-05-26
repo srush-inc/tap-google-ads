@@ -25,7 +25,7 @@ class AutomaticFieldsGoogleAds(GoogleAdsBase):
         # --- Test report streams throw an error --- #
 
         streams_to_test = {stream for stream in self.expected_streams()
-                           if self.is_report(stream)}
+                           if stream == "shopping_performance_report"} # All other reports have automatic_keys
 
         conn_id = connections.ensure_connection(self)
 
@@ -71,14 +71,28 @@ class AutomaticFieldsGoogleAds(GoogleAdsBase):
         """
         Testing that basic sync with minimum field selection functions without Critical Errors
         """
-        print("Automatic Fields Test for tap-google-ads core streams")
+        print("Automatic Fields Test for tap-google-ads core streams and most reports")
 
         # --- Start testing core streams --- #
 
         conn_id = connections.ensure_connection(self)
 
         streams_to_test = {stream for stream in self.expected_streams()
-                           if not self.is_report(stream)}
+                           if stream not in {
+                                   # no test data available, but can generate
+                                   'display_keyword_performance_report',  # Singer Display #2, Ad Group 2
+                                   'display_topics_performance_report',  # Singer Display #2, Ad Group 2
+                                   "keywords_performance_report",  # needs a Search Campaign (currently have none)
+                                   # audiences are unclear on how metrics fall into segments
+                                   'campaign_audience_performance_report',  # Singer Display #2/Singer Display, Ad Group 2 (maybe?)
+                                   'ad_group_audience_performance_report',  # Singer Display #2/Singer Display, Ad Group 2 (maybe?)
+                                   # cannot generate test data
+                                   'placement_performance_report',  # need an app to run javascript to trace conversions
+                                   "video_performance_report",  # need a video to show
+                                   "shopping_performance_report",  # need Shopping campaign type, and link to a store
+                                   "call_details", # need test call data before data will be returned
+                                   "shopping_performance_report", # No automatic keys for this report
+                           }}
 
         # Run a discovery job
         found_catalogs = self.run_and_verify_check_mode(conn_id)
@@ -86,7 +100,7 @@ class AutomaticFieldsGoogleAds(GoogleAdsBase):
         # Perform table and field selection...
         catalogs_to_test = [catalog for catalog in found_catalogs
                             if catalog['stream_name'] in streams_to_test]
-        # select all fields for core streams and...
+        # select no fields for streams and rely on automatic metadata to ensure minimum selection
         self.select_all_streams_and_fields(conn_id, catalogs_to_test, select_all_fields=False)
 
         # Run a sync
@@ -97,25 +111,31 @@ class AutomaticFieldsGoogleAds(GoogleAdsBase):
         menagerie.verify_sync_exit_status(self, exit_status, sync_job_name)
 
         # acquire records from target output
-        synced_records = runner.get_records_from_target_output()
+        synced_messages = runner.get_records_from_target_output()
 
         for stream in streams_to_test:
             with self.subTest(stream=stream):
 
-                # # Verify that only the automatic fields are sent to the target.
+                # gather expectations
+                expected_primary_keys = list(self.expected_primary_keys()[stream])
                 expected_auto_fields = self.expected_automatic_fields()
-                expected_primary_key = list(self.expected_primary_keys()[stream])[0]  # assumes no compound-pks
-                self.assertEqual(len(self.expected_primary_keys()[stream]), 1, msg="Compound pk not supported")
-                for record in synced_records[stream]['messages']:
 
-                    record_primary_key_values = record['data'][expected_primary_key]
-                    record_keys = set(record['data'].keys())
+                # gather results
+                synced_records = [message for message in
+                                  synced_messages.get(stream, {'messages':[]}).get('messages', [])
+                                  if message['action'] == 'upsert']
+                actual_primary_key_values = [tuple([record.get('data').get(expected_pk)
+                                                    for expected_pk in expected_primary_keys])
+                                             for record in synced_records]
 
-                    with self.subTest(primary_key=record_primary_key_values):
-                        self.assertSetEqual(expected_auto_fields[stream], record_keys)
+                # Verify some record messages were synced
+                self.assertGreater(len(synced_records), 0)
 
                 # Verify that all replicated records have unique primary key values.
-                actual_pks = [row.get('data').get(expected_primary_key) for row in
-                              synced_records.get(stream, {'messages':[]}).get('messages', []) if row.get('data')]
+                self.assertCountEqual(actual_primary_key_values, set(actual_primary_key_values))
 
-                self.assertCountEqual(actual_pks, set(actual_pks))
+                # Verify that only the automatic fields are sent in records
+                for record in synced_records:
+                    with self.subTest(record=record['data']):
+                        record_keys = set(record['data'].keys())
+                        self.assertSetEqual(expected_auto_fields[stream], record_keys)
