@@ -21,8 +21,8 @@ class TestEndDate(unittest.TestCase):
     def get_queries_from_sync(self, fake_make_request):
         all_queries_requested = []
         for request_sent in fake_make_request.call_args_list:
-            # The function signature is gas, query, customer_id
-            _, query, _ = request_sent.args
+            # The function signature is gas, query, customer_id, config
+            _, query, _, _ = request_sent.args
             all_queries_requested.append(query)
         return all_queries_requested
 
@@ -51,7 +51,8 @@ class TestEndDate(unittest.TestCase):
              "stream": "hi",
              "metadata": []},
             config,
-            {}
+            {},
+            None
         )
 
     @patch('singer.utils.now')
@@ -118,6 +119,17 @@ class TestEndDate(unittest.TestCase):
                     day in query for query in all_queries_requested
                 )
             )
+
+    @patch('tap_google_ads.streams.make_request')
+    def test_end_date_one_day_before_start(self, fake_make_request):
+        start_date = datetime(2022, 3, 6, 0, 0, 0)
+        end_date = datetime(2022, 3, 5, 0, 0, 0)
+        self.run_sync(start_date, end_date, fake_make_request)
+        all_queries_requested = self.get_queries_from_sync(fake_make_request)
+
+        # verify no requests are made with an invalid start/end date configuration
+        self.assertEqual(len(all_queries_requested), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

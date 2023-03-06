@@ -42,10 +42,15 @@ class BookmarksTest(GoogleAdsBase):
         """
         print("Bookmarks Test for tap-google-ads")
 
+        self.end_date = "2022-02-01T00:00:00Z"
+
         conn_id = connections.ensure_connection(self)
 
         streams_under_test = self.expected_streams() - {
             'ad_group_audience_performance_report',
+            'call_details', # need test call data before data will be returned
+            'campaign_audience_performance_report',
+            'click_performance_report',  # only last 90 days returned
             'display_keyword_performance_report',
             'display_topics_performance_report',
             'keywords_performance_report',
@@ -53,8 +58,6 @@ class BookmarksTest(GoogleAdsBase):
             'search_query_performance_report',
             'shopping_performance_report',
             'video_performance_report',
-            'campaign_audience_performance_report',
-            'call_details', # need test call data before data will be returned
         }
 
         # Run a discovery job
@@ -93,7 +96,6 @@ class BookmarksTest(GoogleAdsBase):
             'placeholder_feed_item_report': data_set_state_value_2,
             'age_range_performance_report': data_set_state_value_1,
             'account_performance_report': data_set_state_value_1,
-            'click_performance_report': data_set_state_value_1,
             'campaign_performance_report': data_set_state_value_1,
             'placeholder_report': data_set_state_value_2,
             'ad_performance_report': data_set_state_value_1,
@@ -152,7 +154,7 @@ class BookmarksTest(GoogleAdsBase):
                 # set expectations
                 expected_replication_method = self.expected_replication_method()[stream]
                 conversion_window = timedelta(days=30) # defaulted value
-                today_datetime = dt.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                end_datetime = dt.strptime(self.end_date, self.START_DATE_FORMAT)
                 # gather results
                 records_1 = [message['data'] for message in synced_records_1[stream]['messages']]
                 records_2 = [message['data'] for message in synced_records_2[stream]['messages']]
@@ -188,15 +190,15 @@ class BookmarksTest(GoogleAdsBase):
                             self.assertIsInstance(bookmark_value_2, str)
                             self.assertIsDateFormat(bookmark_value_2, self.REPLICATION_KEY_FORMAT)
 
-                            # Verify the bookmark is set based on sync end date (today) for sync 1
-                            # (The tap replicaates from the start date through to today)
+                            # Verify the bookmark is set based on sync end date for sync 1
+                            # (The tap replicaates from the start date through to end date)
                             parsed_bookmark_value_1 = dt.strptime(bookmark_value_1, self.REPLICATION_KEY_FORMAT)
-                            self.assertEqual(parsed_bookmark_value_1, today_datetime)
+                            self.assertEqual(parsed_bookmark_value_1, end_datetime)
 
                             # Verify the bookmark is set based on sync execution time for sync 2
-                            # (The tap replicaates from the manipulated state through to todayf)
+                            # (The tap replicaates from the manipulated state through to end date)
                             parsed_bookmark_value_2 = dt.strptime(bookmark_value_2, self.REPLICATION_KEY_FORMAT)
-                            self.assertEqual(parsed_bookmark_value_2, today_datetime)
+                            self.assertEqual(parsed_bookmark_value_2, end_datetime)
 
                             # Verify 2nd sync only replicates records newer than manipulated_state_formatted
                             for record in records_2:

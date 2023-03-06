@@ -69,11 +69,12 @@ class TestBookmarkWithinConversionWindow(unittest.TestCase):
              "metadata": []},
             config,
             state,
+            None
         )
         all_queries_requested = []
         for request_sent in fake_make_request.call_args_list:
-            # The function signature is gas, query, customer_id
-            _, query, _ = request_sent.args
+            # The function signature is gas, query, customer_id, config
+            _, query, _, _ = request_sent.args
             all_queries_requested.append(query)
 
 
@@ -143,11 +144,12 @@ class TestBookmarkOnConversionWindow(unittest.TestCase):
              "metadata": []},
             config,
             state,
+            None
         )
         all_queries_requested = []
         for request_sent in fake_make_request.call_args_list:
-            # The function signature is gas, query, customer_id
-            _, query, _ = request_sent.args
+            # The function signature is gas, query, customer_id, config
+            _, query, _, _ = request_sent.args
             all_queries_requested.append(query)
 
 
@@ -213,11 +215,12 @@ class TestStartDateWithinConversionWindow(unittest.TestCase):
              "metadata": []},
             config,
             state,
+            None
         )
         all_queries_requested = []
         for request_sent in fake_make_request.call_args_list:
-            # The function signature is gas, query, customer_id
-            _, query, _ = request_sent.args
+            # The function signature is gas, query, customer_id, config
+            _, query, _, _ = request_sent.args
             all_queries_requested.append(query)
 
 

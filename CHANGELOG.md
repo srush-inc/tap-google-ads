@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.4.0
+  * Updates API version to 12
+  * Updates pkg version to 19.0.0
+  * Removes `gmail_ad` fields from `ad_performance_report` as they are no longer available after API version bump.
+  * [#76](https://github.com/singer-io/tap-google-ads/pull/76)
+
+## v1.3.4
+  * Updates API Version to 11
+  * Updates pkg version to 17.0.0
+  * [#79](https://github.com/singer-io/tap-google-ads/pull/79)
+
+## v1.3.3
+  * Update applicable core streams to use limit clause. Updates tests [#68](https://github.com/singer-io/tap-google-ads/pull/68)
+
+## v1.3.2
+  * Add timeout parameter to Google Ads search requests
+  * Allow for request_timeout config parameter to be provided [#64](https://github.com/singer-io/tap-google-ads/pull/64)
+
+## v1.3.1
+  * Handle uncaught exceptions [#61](https://github.com/singer-io/tap-google-ads/pull/61)
+  * Implement interruptible full table streams [#60](https://github.com/singer-io/tap-google-ads/pull/60)
+
 ## v1.3.0 [#58](https://github.com/singer-io/tap-google-ads/pull/58)
   * Adds several new core streams including ad_group_criterion, campaign_criterion, and their attributed resources.
   * Adds new subclass UserInterestStream to handle stream specific name transformations.

@@ -25,7 +25,7 @@ jobs:
             pip install 'setuptools==56.0.0'
             pip install .[dev]
       - slack/notify-on-failure:
-          only_for_branches: master
+          only_for_branches: main
       - persist_to_workspace:
           root: /usr/local/share/virtualenvs
           paths:
@@ -45,7 +45,7 @@ jobs:
             echo "$PYLINT_DISABLE_LIST"
             pylint tap_google_ads --disable "$PYLINT_DISABLE_LIST"
       - slack/notify-on-failure:
-          only_for_branches: master
+          only_for_branches: main
 
   run_unit_tests:
     executor: docker-executor
@@ -65,11 +65,11 @@ jobs:
       - store_artifacts:
           path: htmlcov
       - slack/notify-on-failure:
-          only_for_branches: master
+          only_for_branches: main
 
   run_integration_tests:
     executor: docker-executor
-    parallelism: 18
+    parallelism: 19
     steps:
       - checkout
       - attach_workspace:
@@ -80,6 +80,8 @@ jobs:
           command: |
             aws s3 cp s3://com-stitchdata-dev-deployment-assets/environments/tap-tester/tap_tester_sandbox dev_env.sh
             source dev_env.sh
+            mkdir /tmp/${CIRCLE_PROJECT_REPONAME}
+            export STITCH_CONFIG_DIR=/tmp/${CIRCLE_PROJECT_REPONAME}
             source /usr/local/share/virtualenvs/tap-tester/bin/activate
             circleci tests glob "tests/*.py" | circleci tests split > ./tests-to-run
             if [ -s ./tests-to-run ]; then
@@ -89,7 +91,9 @@ jobs:
               done
             fi
       - slack/notify-on-failure:
-          only_for_branches: master
+          only_for_branches: main
+      - store_artifacts:
+          path: /tmp/tap-google-ads
 
 workflows:
   version: 2
