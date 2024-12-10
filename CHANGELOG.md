@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.9.0
+
+- Updates API version to 17
+- Updates pkg version to 25.0.0
+- [#93](https://github.com/singer-io/tap-google-ads/pull/93)
+
 ## v1.8.0
 
 - Updates API version to 16
